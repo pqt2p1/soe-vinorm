@@ -24,6 +24,42 @@ class TestSoeNormalizer:
         assert normalizer.normalize("") == ""
         assert normalizer.normalize("   ") == ""
 
+    def test_normalize_hectare_context(self):
+        """Test that ha is expanded as hectare only with quantity context."""
+        normalizer = SoeNormalizer()
+
+        assert (
+            normalizer.normalize("A ha, tìm thấy mày rồi")
+            == "A ha , tìm thấy mày rồi"
+        )
+        assert (
+            normalizer.normalize("A haha ha ha, ta là người thắng cuộc")
+            == "A haha ha ha , ta là người thắng cuộc"
+        )
+        assert (
+            normalizer.normalize("Mẫu ruộng này có 100 ha")
+            == "Mẫu ruộng này có một trăm héc ta"
+        )
+        assert (
+            normalizer.normalize("thửa đất này là mười ha")
+            == "thửa đất này là mười héc ta"
+        )
+
+    def test_normalize_foreign_name_not_spelled_as_sequence(self):
+        """Test foreign proper names are not spelled out when mislabeled as sequences."""
+        normalizer = SoeNormalizer()
+
+        assert (
+            normalizer.normalize("Ôi, anh McMurdo. Ôi anh McMurdo.")
+            == "Ôi , anh McMurdo . Ôi anh McMurdo ."
+        )
+        assert (
+            normalizer.normalize(
+                "Cô thiếu nữ kêu lên, sợ hãi :  - Ôi, anh McMurdo. Ôi anh McMurdo."
+            )
+            == "Cô thiếu nữ kêu lên , sợ hãi : - Ôi , anh McMurdo . Ôi anh McMurdo ."
+        )
+
     def test_batch_normalize_empty_list(self):
         """Test batch normalization with empty list."""
         normalizer = SoeNormalizer()

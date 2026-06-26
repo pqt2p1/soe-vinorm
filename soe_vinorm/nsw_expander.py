@@ -40,6 +40,33 @@ class RuleBasedNSWExpander(NSWExpander):
     NSW expander using rule-based approach.
     """
 
+    _VIETNAMESE_QUANTITY_WORDS = {
+        "không",
+        "một",
+        "mốt",
+        "hai",
+        "ba",
+        "bốn",
+        "tư",
+        "năm",
+        "lăm",
+        "sáu",
+        "bảy",
+        "tám",
+        "chín",
+        "mười",
+        "mươi",
+        "linh",
+        "lẻ",
+        "trăm",
+        "nghìn",
+        "ngàn",
+        "triệu",
+        "tỷ",
+    }
+    _QUANTITY_TAGS = {"NNUM", "NDIG", "NFRC", "NRNG"}
+    _PROPER_NAME_TRAILING_PUNCTUATION = {".", ",", ":", ";", "!", "?"}
+
     @staticmethod
     def _identity(text: str) -> str:
         """Identity function that returns input unchanged."""
@@ -952,6 +979,7 @@ class RuleBasedNSWExpander(NSWExpander):
                 i += 1
             else:
                 # Non-standard words
+                group_start = i
                 current_group.append(words[i])
                 tag_type = tags[i][2:]  # Remove B- or I- prefix
                 i += 1
@@ -967,7 +995,19 @@ class RuleBasedNSWExpander(NSWExpander):
 
                 # Expand the group
                 nsw = " ".join(current_group)
-                if tag_type in self._expanders:
+                if tag_type == "MEA" and nsw.lower() == "ha":
+                    if self._should_expand_hectare(words, tags, group_start):
+                        results.append(self._measure_expander.expand_measure("ha"))
+                        left_context.append(tag_type)
+                    else:
+                        results.append(nsw)
+                        left_context.append(nsw.lower())
+                elif tag_type == "LSEQ" and self._is_foreign_proper_name_sequence(
+                    current_group
+                ):
+                    results.append(nsw)
+                    left_context.append(nsw.lower())
+                elif tag_type in self._expanders:
                     results.append(self._expanders[tag_type](nsw))
                     left_context.append(tag_type)
                 elif tag_type == "LABB":
@@ -985,3 +1025,37 @@ class RuleBasedNSWExpander(NSWExpander):
                 current_group = []
 
         return results
+
+    def _should_expand_hectare(
+        self, words: List[str], tags: List[str], index: int
+    ) -> bool:
+        """Only expand standalone ha as hectare when a quantity appears before it."""
+        if index == 0:
+            return False
+
+        previous_word = words[index - 1].lower()
+        previous_tag = tags[index - 1]
+
+        if previous_tag != "O" and previous_tag[2:] in self._QUANTITY_TAGS:
+            return True
+
+        return previous_word in self._VIETNAMESE_QUANTITY_WORDS
+
+    def _is_foreign_proper_name_sequence(self, tokens: List[str]) -> bool:
+        """Detect CamelCase/titlecase names that were mislabeled as sequences."""
+        content_tokens = tokens.copy()
+
+        while (
+            content_tokens
+            and content_tokens[-1] in self._PROPER_NAME_TRAILING_PUNCTUATION
+        ):
+            content_tokens.pop()
+
+        if len(content_tokens) != 1:
+            return False
+
+        token = content_tokens[0]
+        if not re.match(r"^[A-Z][A-Za-z]*[a-z][A-Za-z]*$", token):
+            return False
+
+        return token.upper() != token

@@ -35,3 +35,12 @@ class TestRuleBasedNSWExpander:
         expander = RuleBasedNSWExpander(expand_sequence=False)
         result = expander.expand(["abc"], ["B-LSEQ"])
         assert result == ["abc"]
+
+    def test_expand_sequence_keeps_foreign_name_but_expands_code(self):
+        """Test proper-name-like sequences are kept while codes are expanded."""
+        expander = RuleBasedNSWExpander(expand_sequence=True)
+
+        assert expander.expand(["McMurdo", "."], ["B-LSEQ", "I-LSEQ"]) == [
+            "McMurdo ."
+        ]
+        assert expander.expand(["P800"], ["B-LSEQ"]) != ["P800"]
