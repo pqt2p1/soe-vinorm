@@ -47,6 +47,10 @@ soe-vinorm -i input.txt -o output.txt --n-jobs 4 --show-progress
 
 # Normalization options
 soe-vinorm -i input.txt --no-expand-sequence --no-expand-urle
+soe-vinorm -i input.txt --no-expand-sequence --no-expand-unknown
+
+# Detect NSW labels without normalization
+echo "Ngày 31/3" | soe-vinorm --detector phobert_crf --model-path models/phobert_crf --detect-only
 
 # Read from stdin and write to stdout
 echo "Năm 2021" | soe-vinorm
@@ -161,6 +165,86 @@ from soe_vinorm import SoeNormalizer
 
 normalizer = SoeNormalizer(model_path="model-repo")
 ```
+
+Use a trained PhoBERT+CRF detector
+
+```python
+from soe_vinorm import SoeNormalizer
+
+normalizer = SoeNormalizer(
+    detector="phobert_crf",
+    model_path="models/phobert_crf",
+)
+```
+
+```bash
+soe-vinorm --detector phobert_crf --model-path models/phobert_crf
+```
+
+Train a PhoBERT+CRF NSW detector
+
+Training data is JSONL with token-level BIO labels:
+
+```json
+{"tokens":["Năm","2021","tôi","mua","3","kg"],"labels":["O","B-NNUM","O","O","B-NNUM","B-MEA"]}
+```
+
+Install optional ML dependencies and train:
+
+```bash
+uv run python -m soe_vinorm.training.train_phobert_crf \
+  --train data/train.jsonl \
+  --valid data/valid.jsonl \
+  --output-dir models/phobert_crf \
+  --validate-only
+
+uv sync --group ml
+uv run python -m soe_vinorm.training.train_phobert_crf \
+  --train data/train.jsonl \
+  --valid data/valid.jsonl \
+  --output-dir models/phobert_crf \
+  --model-name vinai/phobert-base \
+  --epochs 5 \
+  --batch-size 16
+```
+
+Export the trained detector to ONNX:
+
+```bash
+uv run python -m soe_vinorm.training.export_phobert_crf_onnx \
+  --model-dir models/phobert_crf
+```
+
+The export writes these files next to the trained PyTorch artifacts:
+
+```text
+models/phobert_crf/model.onnx
+models/phobert_crf/model.onnx.data
+models/phobert_crf/crf_transitions.npz
+```
+
+Use the ONNX detector from the CLI:
+
+```bash
+echo "Ngày 31/3 KH8" | soe-vinorm \
+  --detector phobert_crf_onnx \
+  --model-path models/phobert_crf
+```
+
+Or from Python:
+
+```python
+from soe_vinorm import SoeNormalizer
+
+normalizer = SoeNormalizer(
+    detector="phobert_crf_onnx",
+    model_path="models/phobert_crf",
+)
+```
+
+`model.onnx.data` must stay in the same directory as `model.onnx`. The ONNX
+runtime still uses the HuggingFace tokenizer, but it avoids loading the PyTorch
+PhoBERT model during inference.
 
 ## Approach: Two-stage normalization
 

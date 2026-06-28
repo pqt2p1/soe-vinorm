@@ -34,6 +34,40 @@ class NSWDetector(ABC):
         return ["NSW", "NOT_NSW"]
 
 
+def get_nsw_bio_labels() -> List[str]:
+    """Get the BIO-style labels used by NSW detectors and expanders."""
+    base_labels = [
+        "LABB",  # abbreviation
+        "LSEQ",  # sequence
+        "LWRD",  # foreign word
+        "MEA",  # measurement
+        "MONEY",  # money
+        "NDAT",  # date
+        "NDAY",  # day
+        "NDIG",  # digit
+        "NFRC",  # fraction
+        "NMON",  # month
+        "NNUM",  # number
+        "NPER",  # percentage
+        "NQUA",  # quarter
+        "NRNG",  # range
+        "NSCR",  # score
+        "NTIM",  # time
+        "NVER",  # version
+        "ROMA",  # roman numerals
+        "URLE",  # URL and email
+        "O",  # other (not NSW)
+    ]
+
+    bio_labels = []
+    for label in base_labels:
+        if label != "O":
+            bio_labels.extend([f"B-{label}", f"I-{label}"])
+    bio_labels.append("O")
+
+    return bio_labels
+
+
 class CRFNSWDetector(NSWDetector):
     """
     NSW detector using Conditional Random Fields (CRF) model.
@@ -309,35 +343,4 @@ class CRFNSWDetector(NSWDetector):
         Returns:
             List of BIO-style labels.
         """
-        # Base labels for different NSW types
-        base_labels = [
-            "LABB",  # abbreviation
-            "LSEQ",  # sequence
-            "LWRD",  # foreign word
-            "MEA",  # measurement
-            "MONEY",  # money
-            "NDAT",  # date
-            "NDAY",  # day
-            "NDIG",  # digit
-            "NFRC",  # fraction
-            "NMON",  # month
-            "NNUM",  # number
-            "NPER",  # percentage
-            "NQUA",  # quarter
-            "NRNG",  # range
-            "NSCR",  # score
-            "NTIM",  # time
-            "NVER",  # version
-            "ROMA",  # roman numerals
-            "URLE",  # URL and email
-            "O",  # other (not NSW)
-        ]
-
-        # Convert to BIO format
-        bio_labels = []
-        for label in base_labels:
-            if label != "O":
-                bio_labels.extend([f"B-{label}", f"I-{label}"])
-        bio_labels.append("O")
-
-        return bio_labels
+        return get_nsw_bio_labels()

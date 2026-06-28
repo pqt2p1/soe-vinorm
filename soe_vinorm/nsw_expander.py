@@ -219,12 +219,21 @@ class RuleBasedNSWExpander(NSWExpander):
 
         def expand_roma(self, roma: str) -> str:
             """Expand a Roman numeral to its spoken form."""
-            return self.expand_number(self._roman_to_int(roma))
+            number = self._roman_to_int(roma)
+            if number is None:
+                return roma
 
-        def _roman_to_int(self, roman: str) -> str:
+            return self.expand_number(str(number))
+
+        def _roman_to_int(self, roman: str) -> Union[int, None]:
             """Convert Roman numerals to integer."""
             roman = roman.strip().upper()
-            roman = re.sub(r"[^IVXLCDM]", "", roman)
+            if not roman or not re.fullmatch(
+                r"M{0,3}(CM|CD|D?C{0,3})(XC|XL|L?X{0,3})(IX|IV|V?I{0,3})",
+                roman,
+            ):
+                return None
+
             number = 0
             subtract = 0
 
@@ -478,10 +487,12 @@ class RuleBasedNSWExpander(NSWExpander):
             sequence_expander,
             abbr_dict: Dict[str, List[str]],
             model_path: Union[str, None] = None,
+            expand_sequence: bool = True,
         ):
             self._abbr_dict = abbr_dict
             self._number_expander = number_expander
             self._sequence_expander = sequence_expander
+            self._expand_sequence = expand_sequence
 
             if model_path is None:
                 model_path = get_model_weights_path()
@@ -551,7 +562,10 @@ class RuleBasedNSWExpander(NSWExpander):
                         )
                 return " ".join(result)
 
-            return self._sequence_expander.expand_sequence(abbr)
+            if self._expand_sequence:
+                return self._sequence_expander.expand_sequence(abbr)
+
+            return abbr
 
         def _prepare_input(
             self, candidates: List[str], left_context: str, right_context: str
@@ -617,7 +631,14 @@ class RuleBasedNSWExpander(NSWExpander):
 
         def expand_quarter(self, quarter: str) -> str:
             """Expand quarter notation (e.g., I/2023)."""
-            roman, year = quarter.split("/")[:2]
+            parts = quarter.split("/", 1)
+            if len(parts) != 2:
+                return quarter
+
+            roman, year = parts
+            if not re.search(r"\d", year):
+                return quarter
+
             return (
                 f"{self._number_expander.expand_roma(roman)} "
                 f"năm {self._number_expander.expand_number(year)}"
@@ -844,6 +865,7 @@ class RuleBasedNSWExpander(NSWExpander):
         abbr_dict: Union[Dict[str, List[str]], None] = None,
         expand_urle: bool = True,
         expand_sequence: bool = True,
+        expand_unknown: bool = True,
         **kwargs,
     ):
         """Initialize the rule-based NSW expander.
@@ -854,6 +876,7 @@ class RuleBasedNSWExpander(NSWExpander):
             abbr_dict: Dictionary of abbreviations and their expansions. If None, use default abbreviation dictionary.
             expand_urle: Whether to expand URLs and emails. If False, return URLs and emails unchanged.
             expand_sequence: Whether to expand unknown sequences by reading them character by character phonetically. If False, return sequences unchanged.
+            expand_unknown: Whether to spell out unknown O-tagged tokens. If False, keep them unchanged for downstream TTS.
         """
         self._vn_dict = set(vn_dict or load_vietnamese_syllables())
         self._abbr_dict = abbr_dict or load_abbreviation_dict()
@@ -881,6 +904,7 @@ class RuleBasedNSWExpander(NSWExpander):
             self._sequence_expander,
             self._abbr_dict,
             model_path,
+            expand_sequence,
         )
         self._foreign_expander = self.ForeignWordExpander(
             self._number_expander, self._sequence_expander, self._vn_dict
@@ -929,6 +953,7 @@ class RuleBasedNSWExpander(NSWExpander):
             "URLE": self._urle_expander.expand_urle if expand_urle else self._identity,
             "LWRD": self._foreign_expander.expand_foreign_word,
         }
+        self._expand_unknown = expand_unknown
 
     def expand(self, words: List[str], tags: List[str]) -> List[str]:
         """Expand a list of words based on their tags."""
@@ -970,12 +995,14 @@ class RuleBasedNSWExpander(NSWExpander):
                 # In case the detector does not work well, only consider numbers with 1-8 digits
                 elif re.match(r"^-?\d[\d.,]{0,8}$", word):
                     results.append(self._number_expander.expand_number(word))
-                else:
+                elif self._expand_unknown:
                     results.extend(
                         self._sequence_expander.expand_sequence(part)
                         for part in re.split(r"([/\\.])", word)
                         if part
                     )
+                else:
+                    results.append(word)
                 i += 1
             else:
                 # Non-standard words

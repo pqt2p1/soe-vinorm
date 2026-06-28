@@ -1,4 +1,5 @@
 import argparse
+import json
 import sys
 from pathlib import Path
 from textwrap import dedent
@@ -46,6 +47,17 @@ def create_parser() -> argparse.ArgumentParser:
         help="Path to the model repository directory for loading pre-downloaded weights.",
     )
     parser.add_argument(
+        "--detector",
+        choices=["crf", "phobert_crf", "phobert_crf_onnx"],
+        default="crf",
+        help="NSW detector backend to use (default: crf).",
+    )
+    parser.add_argument(
+        "--detector-model-path",
+        type=str,
+        help="Path to a trained detector model. Defaults to --model-path when omitted.",
+    )
+    parser.add_argument(
         "--no-expand-sequence",
         action="store_false",
         dest="expand_sequence",
@@ -60,6 +72,13 @@ def create_parser() -> argparse.ArgumentParser:
         help="Disable expansion of URLs and emails (default: expand enabled).",
     )
     parser.add_argument(
+        "--no-expand-unknown",
+        action="store_false",
+        dest="expand_unknown",
+        default=True,
+        help="Disable spelling out unknown non-NSW tokens (default: expand enabled).",
+    )
+    parser.add_argument(
         "--n-jobs",
         type=int,
         default=1,
@@ -69,6 +88,11 @@ def create_parser() -> argparse.ArgumentParser:
         "--show-progress",
         action="store_true",
         help="Show progress bar during batch processing.",
+    )
+    parser.add_argument(
+        "--detect-only",
+        action="store_true",
+        help="Output preprocessed tokens and NSW labels as JSONL without normalization.",
     )
     parser.add_argument(
         "-v",
@@ -123,11 +147,15 @@ def main():
 
     try:
         kwargs = {
+            "detector": args.detector,
             "expand_sequence": args.expand_sequence,
             "expand_urle": args.expand_urle,
+            "expand_unknown": args.expand_unknown,
         }
         if args.model_path:
             kwargs["model_path"] = args.model_path
+        if args.detector_model_path:
+            kwargs["detector_model_path"] = args.detector_model_path
 
         normalizer = SoeNormalizer(**kwargs)
     except Exception as e:
@@ -135,9 +163,20 @@ def main():
         sys.exit(1)
 
     try:
-        normalized_texts = normalizer.batch_normalize(
-            lines, n_jobs=args.n_jobs, show_progress=args.show_progress
-        )
+        if args.detect_only:
+            if args.n_jobs != 1:
+                print(
+                    "Warning: --detect-only ignores --n-jobs and runs in one process.",
+                    file=sys.stderr,
+                )
+            normalized_texts = [
+                json.dumps(result, ensure_ascii=False)
+                for result in normalizer.batch_detect(lines)
+            ]
+        else:
+            normalized_texts = normalizer.batch_normalize(
+                lines, n_jobs=args.n_jobs, show_progress=args.show_progress
+            )
     except Exception as e:
         print(f"Error during normalization: {e}", file=sys.stderr)
         sys.exit(1)

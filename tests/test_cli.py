@@ -18,8 +18,12 @@ class TestCLIParser:
         assert args.output is None
         assert args.expand_sequence is True
         assert args.expand_urle is True
+        assert args.expand_unknown is True
+        assert args.detector == "crf"
+        assert args.detector_model_path is None
         assert args.n_jobs == 1
         assert args.show_progress is False
+        assert args.detect_only is False
 
     def test_parser_with_input_output(self):
         """Test parser with input and output files."""
@@ -31,9 +35,12 @@ class TestCLIParser:
     def test_parser_disable_options(self):
         """Test parser with disabled options."""
         parser = create_parser()
-        args = parser.parse_args(["--no-expand-sequence", "--no-expand-urle"])
+        args = parser.parse_args(
+            ["--no-expand-sequence", "--no-expand-urle", "--no-expand-unknown"]
+        )
         assert args.expand_sequence is False
         assert args.expand_urle is False
+        assert args.expand_unknown is False
 
     def test_parser_n_jobs(self):
         """Test parser with n_jobs option."""
@@ -46,6 +53,32 @@ class TestCLIParser:
         parser = create_parser()
         args = parser.parse_args(["--show-progress"])
         assert args.show_progress is True
+
+    def test_parser_detect_only(self):
+        """Test parser with detect-only option."""
+        parser = create_parser()
+        args = parser.parse_args(["--detect-only"])
+        assert args.detect_only is True
+
+    def test_parser_detector_options(self):
+        """Test parser with detector options."""
+        parser = create_parser()
+        args = parser.parse_args(
+            [
+                "--detector",
+                "phobert_crf",
+                "--model-path",
+                "model-repo",
+                "--detector-model-path",
+                "models/phobert_crf",
+            ]
+        )
+        assert args.detector == "phobert_crf"
+        assert args.model_path == "model-repo"
+        assert args.detector_model_path == "models/phobert_crf"
+
+        args = parser.parse_args(["--detector", "phobert_crf_onnx"])
+        assert args.detector == "phobert_crf_onnx"
 
 
 class TestIOFunctions:

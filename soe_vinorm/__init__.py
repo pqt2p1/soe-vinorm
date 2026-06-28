@@ -11,8 +11,9 @@ from .normalizer import (
     batch_normalize_texts,
     normalize_text,
 )
-from .nsw_detector import CRFNSWDetector
+from .nsw_detector import CRFNSWDetector, get_nsw_bio_labels
 from .nsw_expander import RuleBasedNSWExpander
+from .phobert_crf import PhoBertCRFNSWDetector, PhoBertCRFONNXNSWDetector
 from .text_processor import TextPostprocessor, TextPreprocessor
 from .utils import (
     load_abbreviation_dict,
@@ -24,9 +25,12 @@ __all__ = [
     "normalize_text",
     "batch_normalize_texts",
     "CRFNSWDetector",
+    "PhoBertCRFNSWDetector",
+    "PhoBertCRFONNXNSWDetector",
     "RuleBasedNSWExpander",
     "TextPreprocessor",
     "TextPostprocessor",
     "load_vietnamese_syllables",
     "load_abbreviation_dict",
+    "get_nsw_bio_labels",
 ]

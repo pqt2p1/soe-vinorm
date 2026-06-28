@@ -17,6 +17,17 @@ class TestSoeNormalizer:
         normalizer = SoeNormalizer()
         assert len(normalizer._vn_dict) > 0
         assert len(normalizer._abbr_dict) > 0
+        assert normalizer._detector_name == "crf"
+
+    def test_invalid_detector(self):
+        """Test invalid detector backend."""
+        with pytest.raises(ValueError, match="detector must be"):
+            SoeNormalizer(detector="invalid")
+
+    def test_phobert_detector_requires_model_path(self):
+        """Test PhoBERT+CRF detector requires an explicit model path."""
+        with pytest.raises(ValueError, match="requires model_path"):
+            SoeNormalizer(detector="phobert_crf")
 
     def test_normalize_empty_text(self):
         """Test normalization of empty text."""
@@ -104,6 +115,25 @@ class TestSoeNormalizer:
         batch_results = normalizer.batch_normalize(texts)
 
         assert individual_results == batch_results
+
+    def test_detect(self, vn_dict, abbr_dict):
+        """Test detect-only API."""
+        normalizer = SoeNormalizer(vn_dict=vn_dict, abbr_dict=abbr_dict)
+        result = normalizer.detect("anh có 123 đồng")
+
+        assert set(result) == {"tokens", "labels"}
+        assert result["tokens"] == ["anh", "có", "123", "đồng"]
+        assert len(result["labels"]) == len(result["tokens"])
+
+    def test_batch_detect(self, vn_dict, abbr_dict):
+        """Test batch detect-only API."""
+        normalizer = SoeNormalizer(vn_dict=vn_dict, abbr_dict=abbr_dict)
+        results = normalizer.batch_detect(["anh có 123 đồng", ""])
+
+        assert len(results) == 2
+        assert results[0]["tokens"] == ["anh", "có", "123", "đồng"]
+        assert len(results[0]["labels"]) == len(results[0]["tokens"])
+        assert results[1] == {"tokens": [], "labels": []}
 
 
 class TestNormalizeTextFunction:
