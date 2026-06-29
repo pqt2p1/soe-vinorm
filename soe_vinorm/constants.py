@@ -139,12 +139,19 @@ MONEY_UNITS_MAPPING = {
 }
 
 MEASUREMENT_UNITS_MAPPING = {
+    "lx":"lux",
+    "lm": "lumen",
     "%": "phần trăm",
     "K": "ca",
     "k": "ca",
     "Mbps": "mê ga bít trên giây",
     "bit/s": "bít trên giây",
     "bit": "bít",
+    "feet": "phít",
+    "mph": "dặm trên giờ",
+    "fps": "khung hình trên giây",
+    "watt": "goát",
+    "watts": "goát",
     "kilowatt": "ki lô oát",
     "km/h": "ki lô mét trên giờ",
     "kV": "ki lô vôn",
@@ -270,6 +277,7 @@ MEASUREMENT_UNITS_MAPPING = {
     "sec": "giây",
     "vg": "vòng",
     "w": "oát",
+    "T": "tes la",
     "µg": "mi cờ rô gam",
     "điôp": "đi ốp",
     "Ω": "ôm",

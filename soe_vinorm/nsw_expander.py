@@ -805,7 +805,7 @@ class RuleBasedNSWExpander(NSWExpander):
             elif unit.lower() in self._vn_dict:
                 return unit
 
-            return self._sequence_expander.expand_sequence(unit)
+            return unit
 
     class UrlEmailExpander:
         """Handle expansion of URLs and emails using lexicon-based maximum matching (https://arxiv.org/abs/2209.02971)."""
