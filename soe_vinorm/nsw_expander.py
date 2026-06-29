@@ -344,8 +344,19 @@ class RuleBasedNSWExpander(NSWExpander):
             """Expand date patterns to spoken form."""
             date_str = date_str.strip().replace(".", "/")
 
+            # YYYY[/]MM[/]DD
+            if re.match(r"^\d{4}/\d{1,2}/\d{1,2}$", date_str):
+                y, m, d = re.split(r"/", date_str)[:3]
+                return (
+                    f"{self._number_expander.expand_number(d)} tháng "
+                    f"{self._number_expander.expand_number(m)} năm "
+                    f"{self._number_expander.expand_number(y)}"
+                )
+            # YYYY[-]MM[-]DD
+            elif re.match(r"^\d{4}-\d{1,2}-\d{1,2}$", date_str):
+                return self.expand_date(re.sub(r"-", "/", date_str))
             # DD[/]MM[/]YYYY
-            if re.match(r"^\d{1,2}/\d{1,2}/\d{2,4}$", date_str):
+            elif re.match(r"^\d{1,2}/\d{1,2}/\d{2,4}$", date_str):
                 d, m, y = re.split(r"/", date_str)[:3]
                 return (
                     f"{self._number_expander.expand_number(d)} tháng "
@@ -379,8 +390,18 @@ class RuleBasedNSWExpander(NSWExpander):
             """Expand month patterns to spoken form."""
             month_str = month_str.strip().replace(".", "/")
 
+            # YYYY[/]MM
+            if re.match(r"^\d{4}/\d{1,2}$", month_str):
+                y, m = month_str.split("/")[:2]
+                return (
+                    f"tháng {self._number_expander.expand_number(m)} năm "
+                    f"{self._number_expander.expand_number(y)}"
+                )
+            # YYYY[-]MM
+            elif re.match(r"^\d{4}-\d{1,2}$", month_str):
+                return self.expand_month(month_str.replace("-", "/"))
             # MM[/]YYYY
-            if re.match(r"^\d{1,2}/\d{2,4}$", month_str):
+            elif re.match(r"^\d{1,2}/\d{2,4}$", month_str):
                 m, y = month_str.split("/")[:2]
                 return (
                     f"{self._number_expander.expand_number(m)} năm "
@@ -631,18 +652,33 @@ class RuleBasedNSWExpander(NSWExpander):
 
         def expand_quarter(self, quarter: str) -> str:
             """Expand quarter notation (e.g., I/2023)."""
-            parts = quarter.split("/", 1)
-            if len(parts) != 2:
+            quarter = quarter.strip()
+            normalized = re.sub(r"(?i)^quý\s+", "", quarter).strip()
+
+            year = None
+            if "/" in normalized:
+                normalized, year = normalized.split("/", 1)
+                normalized = normalized.strip()
+                year = year.strip()
+                if not re.match(r"^\d{2,4}$", year):
+                    return quarter
+
+            if re.match(r"(?i)^q[1-4]$", normalized):
+                quarter_number = normalized[1:]
+            elif re.match(r"^[1-4]$", normalized):
+                quarter_number = normalized
+            elif re.match(r"(?i)^(I|II|III|IV)$", normalized):
+                quarter_number = str(self._roman_quarter_to_int(normalized))
+            else:
                 return quarter
 
-            roman, year = parts
-            if not re.search(r"\d", year):
-                return quarter
+            result = f"quý {self._number_expander.expand_number(quarter_number)}"
+            if year is not None:
+                result += f" năm {self._number_expander.expand_number(year)}"
+            return result
 
-            return (
-                f"{self._number_expander.expand_roma(roman)} "
-                f"năm {self._number_expander.expand_number(year)}"
-            )
+        def _roman_quarter_to_int(self, roman: str) -> int:
+            return {"I": 1, "II": 2, "III": 3, "IV": 4}[roman.upper()]
 
     class VersionExpander:
         """Handle expansion of version numbers."""
@@ -653,12 +689,34 @@ class RuleBasedNSWExpander(NSWExpander):
 
         def expand_version(self, version: str) -> str:
             """Expand version numbers."""
+            version = version.strip()
+            if " " in version:
+                return " ".join(
+                    self.expand_version(part) if re.search(r"\d", part)
+                    else self._expand_version_text(part)
+                    for part in version.split()
+                    if part
+                )
+            if re.match(r"^[vV]\d+(\.\d+)*$", version):
+                return (
+                    "vê "
+                    + " chấm ".join(
+                        self._number_expander.expand_number(num)
+                        for num in version[1:].split(".")
+                    )
+                )
             if re.match(r"^\d+(\.\d+)*$", version):
                 return " chấm ".join(
                     self._number_expander.expand_number(num)
                     for num in version.split(".")
                 )
             return self._sequence_expander.expand_sequence(version)
+
+        def _expand_version_text(self, text: str) -> str:
+            if len(text) == 1 and text.lower() in SEQUENCE_PHONES_VI_MAPPING:
+                phone = SEQUENCE_PHONES_VI_MAPPING[text.lower()]
+                return phone.capitalize() if text.isupper() else phone
+            return self._sequence_expander.expand_sequence(text)
 
     class FractionExpander:
         """Handle expansion of fractions."""
@@ -817,6 +875,8 @@ class RuleBasedNSWExpander(NSWExpander):
         def expand_urle(self, urle: str) -> str:
             """Expand URLs and emails using lexicon-based maximum matching."""
             urle = urle.strip()
+            if urle.startswith("#") and len(urle) > 1:
+                return urle
             result = []
             tokens = list(urle)
             min_window = 1

@@ -11,3 +11,8 @@ wheels/
 
 # Drafts
 draft.ipynb
+
+# Local generated artifacts
+data/
+models/
+reports/
