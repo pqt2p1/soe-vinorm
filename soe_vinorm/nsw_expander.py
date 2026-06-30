@@ -1,6 +1,7 @@
 import json
 import re
 from abc import ABC, abstractmethod
+from functools import lru_cache
 from pathlib import Path
 from typing import Dict, List, Set, Union
 
@@ -22,6 +23,20 @@ from soe_vinorm.utils import (
     load_abbreviation_dict,
     load_vietnamese_syllables,
 )
+
+
+@lru_cache(maxsize=4)
+def _load_abbreviation_scorer(model_path: str):
+    model_path = Path(model_path)
+    scorer = InferenceSession(
+        model_path / "scorer.onnx",
+        providers=["CPUExecutionProvider"],
+    )
+
+    with open(model_path / "config.json", "r", encoding="utf-8") as f:
+        config = json.load(f)
+
+    return scorer, config
 
 
 class NSWExpander(ABC):
@@ -440,6 +455,24 @@ class RuleBasedNSWExpander(NSWExpander):
             if re.match(r"^u\.?\d{2}$", sequence_lower):
                 return f"u {self._number_expander.expand_number(sequence_lower[1:])}"
 
+            tour_duration = re.match(r"^(\d+)\s*([nd])\s*(\d+)\s*([nđ])$", sequence_lower)
+            if tour_duration:
+                first_value, first_unit, second_value, second_unit = (
+                    tour_duration.groups()
+                )
+                if first_unit == "d" and second_unit == "n":
+                    first_unit_text, second_unit_text = "ngày", "đêm"
+                else:
+                    unit_mapping = {"n": "ngày", "đ": "đêm"}
+                    first_unit_text = unit_mapping[first_unit]
+                    second_unit_text = unit_mapping[second_unit]
+                return (
+                    f"{self._number_expander.expand_number(first_value)} "
+                    f"{first_unit_text} "
+                    f"{self._number_expander.expand_number(second_value)} "
+                    f"{second_unit_text}"
+                )
+
             # Only expand single character words if in english mode
             if sequence_lower in self._vn_dict and (
                 not english or len(sequence_lower) > 1
@@ -522,13 +555,7 @@ class RuleBasedNSWExpander(NSWExpander):
 
             model_path = model_path / "abbreviation_expander" / "v0.2"
 
-            self._scorer = InferenceSession(
-                model_path / "scorer.onnx",
-                providers=["CPUExecutionProvider"],
-            )
-
-            with open(model_path / "config.json", "r", encoding="utf-8") as f:
-                config = json.load(f)
+            self._scorer, config = _load_abbreviation_scorer(str(model_path))
 
             self._window_size = config["window_size"]
             self._vocab = config["vocab"]
@@ -705,12 +732,24 @@ class RuleBasedNSWExpander(NSWExpander):
                         for num in version[1:].split(".")
                     )
                 )
+            if self._is_ipv4_address(version):
+                return " chấm ".join(
+                    self._number_expander.expand_digit(octet)
+                    for octet in version.split(".")
+                )
             if re.match(r"^\d+(\.\d+)*$", version):
                 return " chấm ".join(
                     self._number_expander.expand_number(num)
                     for num in version.split(".")
                 )
             return self._sequence_expander.expand_sequence(version)
+
+        def _is_ipv4_address(self, text: str) -> bool:
+            parts = text.split(".")
+            return (
+                len(parts) == 4
+                and all(part.isdigit() and 0 <= int(part) <= 255 for part in parts)
+            )
 
         def _expand_version_text(self, text: str) -> str:
             if len(text) == 1 and text.lower() in SEQUENCE_PHONES_VI_MAPPING:
@@ -739,8 +778,21 @@ class RuleBasedNSWExpander(NSWExpander):
 
         def expand_money(self, money: str) -> str:
             """Expand money amounts."""
+            compact_million = re.match(
+                r"^([0-9]+(?:[.,][0-9]+)?)\s*tr(?:\s*([0-9]+))?$", money
+            )
+            if compact_million:
+                millions, thousands = compact_million.groups()
+                result = f"{self._number_expander.expand_number(millions)} triệu"
+                if thousands:
+                    result += (
+                        f" {self._number_expander.expand_number(thousands)} nghìn"
+                    )
+                return result
+
             value = re.sub(r"[^0-9,.\s]", "", money)
             unit = re.sub(r"[0-9,.\s]", "", money)
+            value = self._normalize_money_value(value)
 
             result = self._number_expander.expand_number(value)
             if unit in MONEY_UNITS_MAPPING:
@@ -749,6 +801,14 @@ class RuleBasedNSWExpander(NSWExpander):
                 result += f" {unit}"
 
             return result.strip()
+
+        def _normalize_money_value(self, value: str) -> str:
+            value = value.strip()
+            if "," in value and "." in value:
+                if value.rfind(".") > value.rfind(","):
+                    return value.replace(",", "")
+                return value.replace(".", "")
+            return value
 
     class ScoreExpander:
         """Handle expansion of scores."""
@@ -826,6 +886,9 @@ class RuleBasedNSWExpander(NSWExpander):
             # Pure number
             if re.match(r"^-?[0-9.,]+$", measure):
                 return self._number_expander.expand_number(measure)
+            # Mathematical expression mislabeled as measurement.
+            elif re.match(r"^-?[0-9.,]+\s*[+*/^]\s*-?[0-9.,]+$", measure):
+                return self._number_expander.expand_number(measure)
             # Units only
             elif re.match(r"^[^0-9/][^/]*(\s*/\s*[^/]+)*$", measure):
                 units = re.split(r"\s*/\s*", measure)
@@ -834,6 +897,15 @@ class RuleBasedNSWExpander(NSWExpander):
             elif re.match(r"^-?[0-9.,]+.*?\s*[-–]\s*[0-9.,]+.*$", measure):
                 n, m = re.split(r"\s*[-–]\s*", measure)[:2]
                 return f"{self.expand_measure(n)} đến {self.expand_measure(m)}"
+            # Height shorthand, e.g. 1m75 means 1 meter 75 centimeters.
+            elif re.match(r"^\d+\s*m\s*\d{1,2}$", measure, flags=re.IGNORECASE):
+                meters, centimeters = re.split(r"\s*m\s*", measure, flags=re.IGNORECASE)[
+                    :2
+                ]
+                return (
+                    f"{self._number_expander.expand_number(meters)} mét "
+                    f"{self._number_expander.expand_number(centimeters)}"
+                )
             # number unit
             elif re.match(r"^-?[0-9.,]+[^0-9.,][^.,]*$", measure):
                 n, u = re.search(r"^(-?[0-9.,]+)([^0-9.,][^.,]*)$", measure).groups()[
@@ -868,6 +940,10 @@ class RuleBasedNSWExpander(NSWExpander):
     class UrlEmailExpander:
         """Handle expansion of URLs and emails using lexicon-based maximum matching (https://arxiv.org/abs/2209.02971)."""
 
+        _SPECIAL_TOKENS = {
+            "gmail": "gờ mêu",
+        }
+
         def __init__(self, sequence_expander, no_tone_dict):
             self._sequence_expander = sequence_expander
             self._no_tone_dict = no_tone_dict
@@ -890,6 +966,12 @@ class RuleBasedNSWExpander(NSWExpander):
                     end_idx = start_idx + window_size - 1
                     candidate = tokens[start_idx : end_idx + 1]
                     candidate_str = "".join(candidate)
+
+                    if candidate_str.lower() in self._SPECIAL_TOKENS:
+                        result.append(self._SPECIAL_TOKENS[candidate_str.lower()])
+                        start_idx = end_idx + 1
+                        found = True
+                        break
 
                     if (
                         candidate_str.lower() in self._no_tone_dict
@@ -991,10 +1073,14 @@ class RuleBasedNSWExpander(NSWExpander):
             self._sequence_expander, self._no_tone_dict
         )
 
+        lseq_expander = (
+            lambda sequence: self._sequence_expander.expand_sequence(
+                sequence, english=True
+            )
+        ) if expand_sequence else self._identity
+
         self._expanders = {
-            "LSEQ": self._sequence_expander.expand_sequence
-            if expand_sequence
-            else self._identity,
+            "LSEQ": lseq_expander,
             "MEA": self._measure_expander.expand_measure,
             "MONEY": self._money_expander.expand_money,
             "NDAT": self._time_date_expander.expand_date,

@@ -125,6 +125,17 @@ class TestSoeNormalizer:
         assert result["tokens"] == ["anh", "có", "123", "đồng"]
         assert len(result["labels"]) == len(result["tokens"])
 
+    def test_explain(self, vn_dict, abbr_dict):
+        """Test debug explanation API."""
+        normalizer = SoeNormalizer(vn_dict=vn_dict, abbr_dict=abbr_dict)
+        result = normalizer.explain("anh có 123 đồng")
+
+        assert set(result) == {"tokens", "labels", "expanded_tokens", "normalized"}
+        assert result["tokens"] == ["anh", "có", "123", "đồng"]
+        assert len(result["labels"]) == len(result["tokens"])
+        assert len(result["expanded_tokens"]) == len(result["tokens"])
+        assert result["normalized"] == " ".join(result["expanded_tokens"])
+
     def test_batch_detect(self, vn_dict, abbr_dict):
         """Test batch detect-only API."""
         normalizer = SoeNormalizer(vn_dict=vn_dict, abbr_dict=abbr_dict)

@@ -1,4 +1,4 @@
-from soe_vinorm.cli import create_parser, read_input, write_output
+from soe_vinorm.cli import create_parser, format_explanation, read_input, write_output
 
 
 class TestCLIParser:
@@ -24,6 +24,9 @@ class TestCLIParser:
         assert args.n_jobs == 1
         assert args.show_progress is False
         assert args.detect_only is False
+        assert args.explain is False
+        assert args.explain_format is None
+        assert args.interactive is False
 
     def test_parser_with_input_output(self):
         """Test parser with input and output files."""
@@ -59,6 +62,24 @@ class TestCLIParser:
         parser = create_parser()
         args = parser.parse_args(["--detect-only"])
         assert args.detect_only is True
+
+    def test_parser_explain(self):
+        """Test parser with explain option."""
+        parser = create_parser()
+        args = parser.parse_args(["--explain"])
+        assert args.explain is True
+
+    def test_parser_explain_format(self):
+        """Test parser with explain format option."""
+        parser = create_parser()
+        args = parser.parse_args(["--explain", "--explain-format", "table"])
+        assert args.explain_format == "table"
+
+    def test_parser_interactive(self):
+        """Test parser with interactive option."""
+        parser = create_parser()
+        args = parser.parse_args(["--interactive"])
+        assert args.interactive is True
 
     def test_parser_detector_options(self):
         """Test parser with detector options."""
@@ -109,3 +130,49 @@ class TestIOFunctions:
 
         captured = capsys.readouterr()
         assert captured.out == "Line 1\nLine 2\n"
+
+
+class TestExplainFormatting:
+    """Test human-readable explain output formatting."""
+
+    def test_format_explanation_json(self):
+        explanation = {
+            "tokens": ["ID"],
+            "labels": ["B-LSEQ"],
+            "expanded_tokens": ["Ai Đi"],
+            "normalized": "Ai Đi",
+        }
+
+        assert (
+            format_explanation(explanation, "json")
+            == '{"tokens": ["ID"], "labels": ["B-LSEQ"], '
+            '"expanded_tokens": ["Ai Đi"], "normalized": "Ai Đi"}'
+        )
+
+    def test_format_explanation_table(self):
+        explanation = {
+            "tokens": ["Anh", "ID"],
+            "labels": ["O", "B-LSEQ"],
+            "expanded_tokens": ["Anh", "Ai Đi"],
+            "normalized": "Anh Ai Đi",
+        }
+
+        result = format_explanation(explanation, "table")
+
+        assert "idx  token  label   expanded" in result
+        assert "1    ID     B-LSEQ  Ai Đi" in result
+        assert "NORMALIZED:\nAnh Ai Đi" in result
+
+    def test_format_explanation_changed(self):
+        explanation = {
+            "tokens": ["Anh", "ID"],
+            "labels": ["O", "B-LSEQ"],
+            "expanded_tokens": ["Anh", "Ai Đi"],
+            "normalized": "Anh Ai Đi",
+        }
+
+        result = format_explanation(explanation, "changed")
+
+        assert "0  Anh" not in result
+        assert "1  ID  B-LSEQ  ID -> Ai Đi" in result
+        assert "NORMALIZED: Anh Ai Đi" in result

@@ -303,6 +303,12 @@ class TestRuleBasedNSWExpander:
         assert expander.expand(["5.15.182"], ["B-NVER"]) == [
             "năm chấm mười lăm chấm một trăm tám mươi hai"
         ]
+        assert expander.expand(["127.0.0.1"], ["B-NVER"]) == [
+            "một hai bảy chấm không chấm không chấm một"
+        ]
+        assert expander.expand(["IPv4", "127.0.0.1"], ["B-NVER", "I-NVER"]) == [
+            "I Pê vê bốn một hai bảy chấm không chấm không chấm một"
+        ]
         assert expander.expand(["Rev", "C"], ["B-NVER", "I-NVER"]) == [
             "Rờ e vê Xê"
         ]
@@ -321,6 +327,9 @@ class TestRuleBasedNSWExpander:
         ]
         assert expander.expand(["admin@demo.edu.vn"], ["B-URLE"]) != [
             "admin@demo.edu.vn"
+        ]
+        assert expander.expand(["duy.nguyen@gmail.com"], ["B-URLE"]) == [
+            "duy chấm nguyen a còng gờ mêu chấm com"
         ]
 
         expander = RuleBasedNSWExpander(expand_urle=False)
@@ -396,6 +405,11 @@ class TestRuleBasedNSWExpander:
             (["300", "yd"], ["B-MEA", "I-MEA"], ["ba trăm yd"]),
             (["82km/h"], ["B-MEA"], ["tám mươi hai ki lô mét trên giờ"]),
             (["5foobar"], ["B-MEA"], ["năm foobar"]),
+            (["1.2tr"], ["B-MEA"], ["một chấm hai triệu"]),
+            (["2^-3"], ["B-MEA"], ["hai mũ trừ ba"]),
+            (["1m75"], ["B-MEA"], ["một mét bảy mươi lăm"]),
+            (["1m7"], ["B-MEA"], ["một mét bảy"]),
+            (["1m05"], ["B-MEA"], ["một mét năm"]),
             (["mg/l"], ["B-MEA"], ["mi li gam trên lít"]),
             (["2-3kg"], ["B-MEA"], ["hai đến ba ki lô gam"]),
             (["3 kg - 5 kg"], ["B-MEA"], ["ba ki lô gam đến năm ki lô gam"]),
@@ -424,6 +438,23 @@ class TestRuleBasedNSWExpander:
             (["25.000đ"], ["B-MONEY"], ["hai mươi lăm nghìn đồng"]),
             (["50€"], ["B-MONEY"], ["năm mươi ơ rô"]),
             (["1.000", "VNĐ"], ["B-MONEY", "I-MONEY"], ["một nghìn việt nam đồng"]),
+            (
+                ["1.000,50", "đồng"],
+                ["B-MONEY", "I-MONEY"],
+                ["một nghìn phẩy năm không đồng"],
+            ),
+            (
+                ["1,000.50", "USD"],
+                ["B-MONEY", "I-MONEY"],
+                ["một nghìn chấm năm không u ét đê"],
+            ),
+            (["1.000,50 đồng"], ["B-MONEY"], ["một nghìn phẩy năm không đồng"]),
+            (["1,000.50 USD"], ["B-MONEY"], ["một nghìn chấm năm không u ét đê"]),
+            (["2tr450"], ["B-MONEY"], ["hai triệu bốn trăm năm mươi nghìn"]),
+            (["2tr"], ["B-MONEY"], ["hai triệu"]),
+            (["1.2tr"], ["B-MONEY"], ["một chấm hai triệu"]),
+            (["1,2tr"], ["B-MONEY"], ["một phẩy hai triệu"]),
+            (["2 tr 450"], ["B-MONEY"], ["hai triệu bốn trăm năm mươi nghìn"]),
             (["100XYZ"], ["B-MONEY"], ["một trăm XYZ"]),
             (["EUR/USD"], ["B-MONEY"], ["EUR/USD"]),
         ],
@@ -441,9 +472,12 @@ class TestRuleBasedNSWExpander:
             (["A55"], ["B-LWRD"], ["A năm mươi lăm"]),
             (["OpenAI-GPT_4"], ["B-LWRD"], ["OpenAI GPT bốn"]),
             (["u23"], ["B-LSEQ"], ["u hai mươi ba"]),
-            (["A007"], ["B-LSEQ"], ["A không không bảy"]),
-            (["A-B/12"], ["B-LSEQ"], ["A - Bê / mười hai"]),
-            (["P800"], ["B-LSEQ"], ["Pê tám trăm"]),
+            (["3N2Đ"], ["B-LSEQ"], ["ba ngày hai đêm"]),
+            (["5D4N"], ["B-LSEQ"], ["năm ngày bốn đêm"]),
+            (["ID"], ["B-LSEQ"], ["Ai Đi"]),
+            (["A007"], ["B-LSEQ"], ["Ây không không bảy"]),
+            (["A-B/12"], ["B-LSEQ"], ["Ây hai phừn Bi sờ lát mười hai"]),
+            (["P800"], ["B-LSEQ"], ["Pi tám trăm"]),
         ],
     )
     def test_expand_word_and_sequence_variants(self, words, labels, expected):

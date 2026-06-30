@@ -206,6 +206,38 @@ class SoeNormalizer(Normalizer):
 
         return {"tokens": tokens, "labels": self._nsw_detector.detect(tokens)}
 
+    def explain(self, text: str) -> Dict[str, Union[List[str], str]]:
+        """
+        Detect and expand NSWs, returning intermediate values for debugging.
+
+        Args:
+            text: Input text to explain.
+
+        Returns:
+            Dictionary containing preprocessed tokens, detected labels, expanded
+            tokens, and the final normalized text.
+        """
+        if not isinstance(text, str):
+            raise TypeError("Input must be a string")
+
+        tokens = self._preprocessor(text).split()
+        if not tokens:
+            return {
+                "tokens": [],
+                "labels": [],
+                "expanded_tokens": [],
+                "normalized": text.strip(),
+            }
+
+        labels = self._nsw_detector.detect(tokens)
+        expanded_tokens = self._nsw_expander.expand(tokens, labels)
+        return {
+            "tokens": tokens,
+            "labels": labels,
+            "expanded_tokens": expanded_tokens,
+            "normalized": " ".join(expanded_tokens),
+        }
+
     def batch_detect(self, texts: List[str]) -> List[Dict[str, List[str]]]:
         """
         Detect NSW labels for multiple texts after preprocessing.

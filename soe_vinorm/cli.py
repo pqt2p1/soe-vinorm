@@ -3,7 +3,7 @@ import json
 import sys
 from pathlib import Path
 from textwrap import dedent
-from typing import List, Union
+from typing import Dict, List, Union
 
 from soe_vinorm import SoeNormalizer
 
@@ -95,6 +95,27 @@ def create_parser() -> argparse.ArgumentParser:
         help="Output preprocessed tokens and NSW labels as JSONL without normalization.",
     )
     parser.add_argument(
+        "--explain",
+        action="store_true",
+        help=(
+            "Output tokens, labels, expanded tokens, and normalized text as JSONL "
+            "for debugging."
+        ),
+    )
+    parser.add_argument(
+        "--explain-format",
+        choices=["json", "table", "changed"],
+        help=(
+            "Format for --explain output. Defaults to json in batch mode and "
+            "table in interactive mode."
+        ),
+    )
+    parser.add_argument(
+        "--interactive",
+        action="store_true",
+        help="Keep the process alive and process one stdin line at a time.",
+    )
+    parser.add_argument(
         "-v",
         "--version",
         action="store_true",
@@ -129,6 +150,114 @@ def write_output(lines: List[str], output_path: Union[str, None] = None):
             print(line)
 
 
+def format_explanation(
+    explanation: Dict[str, Union[List[str], str]],
+    output_format: str,
+    input_text: Union[str, None] = None,
+):
+    """Format explanation output for machines or terminal debugging."""
+    if output_format == "json":
+        return json.dumps(explanation, ensure_ascii=False)
+
+    tokens = explanation["tokens"]
+    labels = explanation["labels"]
+    expanded_tokens = explanation["expanded_tokens"]
+    normalized = explanation["normalized"]
+
+    if output_format == "changed":
+        rows = [
+            (str(index), token, label, expanded)
+            for index, (token, label, expanded) in enumerate(
+                zip(tokens, labels, expanded_tokens)
+            )
+            if label != "O" or token != expanded
+        ]
+        if not rows:
+            body = "(no token-level changes)"
+        else:
+            body = "\n".join(
+                f"{index}  {token}  {label}  {token} -> {expanded}"
+                for index, token, label, expanded in rows
+            )
+        prefix = f"INPUT: {input_text}\n\n" if input_text is not None else ""
+        return f"{prefix}{body}\nNORMALIZED: {normalized}"
+
+    headers = ("idx", "token", "label", "expanded")
+    rows = [
+        (str(index), token, label, expanded)
+        for index, (token, label, expanded) in enumerate(
+            zip(tokens, labels, expanded_tokens)
+        )
+    ]
+    widths = [
+        max(len(headers[column]), *(len(row[column]) for row in rows))
+        if rows
+        else len(headers[column])
+        for column in range(len(headers))
+    ]
+
+    def format_row(row):
+        return "  ".join(value.ljust(width) for value, width in zip(row, widths))
+
+    table_lines = [
+        *(["INPUT:", str(input_text), ""] if input_text is not None else []),
+        format_row(headers),
+        format_row(tuple("-" * width for width in widths)),
+        *(format_row(row) for row in rows),
+        "",
+        "NORMALIZED:",
+        str(normalized),
+    ]
+    return "\n".join(table_lines)
+
+
+def process_line(
+    normalizer: SoeNormalizer,
+    line: str,
+    detect_only: bool,
+    explain: bool = False,
+    explain_format: str = "json",
+) -> str:
+    """Process a single input line."""
+    if explain:
+        return format_explanation(normalizer.explain(line), explain_format, line)
+    if detect_only:
+        return json.dumps(normalizer.detect(line), ensure_ascii=False)
+    return normalizer.normalize(line)
+
+
+def run_interactive(
+    normalizer: SoeNormalizer,
+    detect_only: bool,
+    explain: bool,
+    explain_format: str,
+):
+    """Process stdin line by line while keeping the normalizer in memory."""
+    if sys.stdin.isatty():
+        print(
+            "soe-vinorm interactive mode ready. Press Ctrl-D to exit.",
+            file=sys.stderr,
+        )
+
+    for line in sys.stdin:
+        line = line.rstrip("\n")
+        try:
+            print(
+                process_line(
+                    normalizer,
+                    line,
+                    detect_only,
+                    explain,
+                    explain_format,
+                ),
+                flush=True,
+            )
+            if explain and explain_format != "json":
+                print("-" * 72, flush=True)
+        except Exception as e:
+            print(f"Error during normalization: {e}", file=sys.stderr, flush=True)
+
+
 def main():
     parser = create_parser()
     args = parser.parse_args()
@@ -139,11 +268,14 @@ def main():
         print(f"Soe Vinorm {__version__}")
         sys.exit(0)
 
-    try:
-        lines = read_input(args.input)
-    except Exception as e:
-        print(f"Error reading input: {e}", file=sys.stderr)
+    if args.interactive and (args.input or args.output):
+        print(
+            "Error: --interactive cannot be used with --input or --output.",
+            file=sys.stderr,
+        )
         sys.exit(1)
+
+    explain_format = args.explain_format or ("table" if args.interactive else "json")
 
     try:
         kwargs = {
@@ -162,8 +294,28 @@ def main():
         print(f"Error initializing normalizer: {e}", file=sys.stderr)
         sys.exit(1)
 
+    if args.interactive:
+        run_interactive(normalizer, args.detect_only, args.explain, explain_format)
+        return
+
     try:
-        if args.detect_only:
+        lines = read_input(args.input)
+    except Exception as e:
+        print(f"Error reading input: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        if args.explain:
+            if args.n_jobs != 1:
+                print(
+                    "Warning: --explain ignores --n-jobs and runs in one process.",
+                    file=sys.stderr,
+                )
+            normalized_texts = [
+                format_explanation(normalizer.explain(line), explain_format)
+                for line in lines
+            ]
+        elif args.detect_only:
             if args.n_jobs != 1:
                 print(
                     "Warning: --detect-only ignores --n-jobs and runs in one process.",

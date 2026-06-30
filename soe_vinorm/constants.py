@@ -158,6 +158,7 @@ MONEY_UNITS_MAPPING = {
     "₫": "đồng",
     "đ": "đồng",
     "đồng": "đồng",
+    "tr": "triệu",
     "฿": "bạt",
     "₭": "kíp",
     "₹": "rúp",
